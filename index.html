@@ -1,0 +1,1356 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>漢字陣取りゲーム 6x6</title>
+<style>
+body { font-family: sans-serif; text-align: center; }
+#problem { font-size: 18px; margin-bottom: 10px; }
+#controls { margin-bottom: 15px; }
+#board { display: grid; grid-template-columns: repeat(6, 80px); grid-template-rows: repeat(6, 80px); gap: 3px; margin: 0 auto; width: max-content; }
+.cell { background: #eee; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 20px; cursor: pointer; border: 1px solid #ccc; padding: 5px; box-sizing: border-box; }
+.player { background: lightblue; }
+.cpu { background: pink; }
+.selectable { border: 2px solid green; }
+.reading { font-size: 14px; margin-top: 4px; color: #555; }
+#rules { margin-top: 15px; text-align: left; width: 500px; margin-left: auto; margin-right: auto; font-size: 14px; }
+#rules li { margin-bottom: 4px; }
+#timer { font-size: 16px; color: red; margin-top: 8px; }
+</style>
+</head>
+<body>
+<h1>漢字陣取りゲーム 6x6</h1>
+
+<div id="cpuLevelSelect">
+  <label>CPUレベルを選択：
+    <select id="cpuLevel">
+      <option value="1">弱い</option>
+      <option value="2">ふつう</option>
+      <option value="3">強い</option>
+      <option value="4">とても強い</option>
+      <option value="5">天才</option>
+    </select>
+  </label>
+  <button id="startGame">ゲーム開始</button>
+  <button id="resetGame">リセット</button>
+</div>
+
+<div id="problem">この漢字の読みは？ → </div>
+
+<div id="controls">
+  <input type="text" id="answer" placeholder="よみがなを入力">
+  <button id="submit">決定</button>
+  <p id="turn"></p>
+  <p id="score"></p>
+  <p id="timer"></p>
+</div>
+
+<div id="board"></div>
+
+<div id="rules">
+  <h3>ゲームのルール</h3>
+  <ul>
+ 　<li>プレイヤーは左上、CPUは右下からスタートします。選択可能なマスは自分の正解済みマスに隣接するマスのみです。</li>
+    <li>漢字を入力して正解すればマスを獲得します。間違えると相手にターンが移りますが、読み方が1文字ずつ表示されます。制限時間内に何も解答しないと、自動的に相手にターンが渡ります。</li>
+    <li>隣接するマスがなくなったら、右上か左下のマスを選択できます。それもできなければランダムに選択できます。</li>
+    <li>ゲーム終了時に獲得したマス目が多い方が勝利です。</li>
+    <li>注意事項1 解答は全て「ひらがな」で入力してください。</li>
+    <li>注意事項2 必ず読みたいマスを選択してから解答してください。「この漢字の読みは→○○」と表示されていても、クリックしてからでないと解答が反映されないです。</li>
+  </ul>
+</div>
+
+<script>
+// 漢字データ
+const kanjiDataByLevel = {
+  1:[{ kanji: "若干", yomi: ["じゃっかん"] },
+  { kanji: "弱冠", yomi: ["じゃっかん"] },
+　{ kanji: "扇", yomi: ["おうぎ"] },
+  { kanji: "刺身", yomi: ["さしみ"] },
+  { kanji: "芝生", yomi: ["しばふ"] },
+  { kanji: "濃霧", yomi: ["のうむ"] },
+  { kanji: "曙", yomi: ["あけぼの"] },
+  { kanji: "梢", yomi: ["こずえ"] },
+  { kanji: "鯖", yomi: ["さば", "サバ"] }, 
+  { kanji: "相殺", yomi: ["そうさい"] },
+  { kanji: "挨拶", yomi: ["あいさつ"] },
+  { kanji: "姦しい", yomi: ["かしましい"] },
+  { kanji: "喘ぐ", yomi: ["あえぐ"] },
+  { kanji: "体裁", yomi: ["ていさい"] },
+  { kanji: "結納", yomi: ["ゆいのう"] },
+  { kanji: "鰯", yomi: ["いわし", "イワシ"] },
+  { kanji: "牡蠣", yomi: ["かき", "カキ"] },
+  { kanji: "斡旋", yomi: ["あっせん"] },
+  { kanji: "嫉妬", yomi: ["しっと"] },
+  { kanji: "未曾有", yomi: ["みぞう"] },
+  { kanji: "繕う", yomi: ["つくろう"] },
+  { kanji: "炒める", yomi: ["いためる"] },
+  { kanji: "向日葵", yomi: ["ひまわり", "ヒマワリ"] },
+  { kanji: "烏", yomi: ["からす", "カラス"] },
+  { kanji: "啄木鳥", yomi: ["きつつき", "キツツキ"] },
+  { kanji: "燕", yomi: ["つばめ", "ツバメ"] },
+  { kanji: "百舌", yomi: ["もず", "モズ"] },
+  { kanji: "蛾", yomi: ["が", "ガ"] },
+  { kanji: "鯨", yomi: ["くじら", "クジラ"] },
+  { kanji: "専ら", yomi: ["もっぱら"] },
+  { kanji: "露西亜", yomi: ["ろしあ", "ロシア"] },
+  { kanji: "欧羅巴", yomi: ["よーろっぱ", "ヨーロッパ"] },
+  { kanji: "亜米利加", yomi: ["あめりか", "アメリカ"] },
+  { kanji: "栞", yomi: ["しおり"] },
+  { kanji: "叔父", yomi: ["おじ"] },
+  { kanji: "伯母", yomi: ["おば"] },
+  { kanji: "誤魔化す", yomi: ["ごまかす"] },
+  { kanji: "虹", yomi: ["にじ"] },
+  { kanji: "狸", yomi: ["たぬき"] },
+  { kanji: "各々", yomi: ["おのおの"] },
+  { kanji: "森", yomi: ["もり"] },
+  { kanji: "顔", yomi: ["かお"] },
+  { kanji: "薬", yomi: ["くすり"] },
+  { kanji: "鏡", yomi: ["かがみ"] },
+  { kanji: "粉", yomi: ["こな"] },
+  { kanji: "鋼", yomi: ["はがね"] },
+  { kanji: "鶏", yomi: ["にわとり"] },
+  { kanji: "肌", yomi: ["はだ"] },
+  { kanji: "鶴", yomi: ["つる"] },
+  { kanji: "峠", yomi: ["とうげ"] },
+  { kanji: "狼", yomi: ["おおかみ"] }],
+  2:[{ kanji: "割愛", yomi: ["かつあい"] },
+  { kanji: "水稲", yomi: ["すいとう"] },
+  { kanji: "出納", yomi: ["すいとう"] },
+  { kanji: "省みる", yomi: ["かえりみる"] },
+  { kanji: "米穀", yomi: ["べいこく"] },
+  { kanji: "瞬く", yomi: ["またたく"] },
+  { kanji: "敷設", yomi: ["ふせつ"] },
+  { kanji: "添付", yomi: ["てんぷ"] },
+　{ kanji: "市井", yomi: ["しせい"] },
+  { kanji: "趣", yomi: ["おもむき"] },
+  { kanji: "湖沼", yomi: ["こしょう"] },
+  { kanji: "暦", yomi: ["こよみ"] },
+  { kanji: "西瓜", yomi: ["すいか", "スイカ"] },
+  { kanji: "承る", yomi: ["うけたまわる"] },
+  { kanji: "火傷", yomi: ["やけど"] },
+  { kanji: "遊説", yomi: ["ゆうぜい"] },
+  { kanji: "蜘蛛", yomi: ["くも", "クモ"] },
+  { kanji: "社", yomi: ["やしろ"] },
+  { kanji: "鮒", yomi: ["ふな", "フナ"] },
+  { kanji: "顧みる", yomi: ["かえりみる"] },
+  { kanji: "賄賂", yomi: ["わいろ"] },
+  { kanji: "吹聴", yomi: ["ふいちょう"] },
+  { kanji: "南瓜", yomi: ["かぼちゃ", "カボチャ"] },
+  { kanji: "珊瑚", yomi: ["さんご", "サンゴ"] },
+  { kanji: "鮨", yomi: ["すし"] },
+  { kanji: "老舗", yomi: ["しにせ"] },
+  { kanji: "瓦礫", yomi: ["がれき"] },
+  { kanji: "如月", yomi: ["きさらぎ"] },
+  { kanji: "昴", yomi: ["すばる"] },
+  { kanji: "外郎", yomi: ["ういろう"] },
+  { kanji: "鮎", yomi: ["あゆ", "アユ"] },
+  { kanji: "烏賊", yomi: ["いか", "イカ"] },
+  { kanji: "雲丹", yomi: ["うに", "ウニ"] },
+  { kanji: "海栗", yomi: ["うに", "ウニ"] },
+  { kanji: "海胆", yomi: ["うに", "ウニ"] },
+  { kanji: "鰹", yomi: ["かつお", "カツオ"] },
+  { kanji: "柳葉魚", yomi: ["ししゃも", "シシャモ"] },
+  { kanji: "蛸", yomi: ["たこ", "タコ"] },
+  { kanji: "紫陽花", yomi: ["あじさい", "アジサイ"] },
+  { kanji: "単衣", yomi: ["ひとえ"] },
+  { kanji: "翻す", yomi: ["ひるがえす"] },
+  { kanji: "虫唾", yomi: ["むしず"] },
+  { kanji: "馬鈴薯", yomi: ["ばれいしょ"] },
+  { kanji: "神輿", yomi: ["みこし"] },
+  { kanji: "境内", yomi: ["けいだい"] },
+  { kanji: "刹那", yomi: ["せつな"] },
+  { kanji: "虻", yomi: ["あぶ", "アブ"] },
+  { kanji: "仙人掌", yomi: ["さぼてん", "サボテン"] },
+  { kanji: "蒲公英", yomi: ["たんぽぽ", "タンポポ"] },
+  { kanji: "孔雀", yomi: ["くじゃく", "クジャク"] },
+  { kanji: "鸚哥", yomi: ["いんこ", "インコ"] },
+  { kanji: "鶯", yomi: ["うぐいす", "ウグイス"] },
+  { kanji: "鸚鵡", yomi: ["おうむ", "オウム"] },
+  { kanji: "沐浴", yomi: ["もくよく"] },
+  { kanji: "逼迫", yomi: ["ひっぱく"] },
+  { kanji: "玄人", yomi: ["くろうと"] },
+  { kanji: "警鐘", yomi: ["けいしょう"] },
+  { kanji: "時雨", yomi: ["しぐれ"] },
+  { kanji: "五月雨", yomi: ["さみだれ"] },
+  { kanji: "葡萄牙", yomi: ["ぽるとがる", "ポルトガル"] },
+  { kanji: "独逸", yomi: ["どいつ", "ドイツ"] },
+  { kanji: "伊太利", yomi: ["いたりあ", "イタリア"] },
+  { kanji: "躾", yomi: ["しつけ"] },
+  { kanji: "師走", yomi: ["しわす"] },
+  { kanji: "欠伸", yomi: ["あくび"] },
+  { kanji: "灰汁", yomi: ["あく"] },
+  { kanji: "悪戯", yomi: ["いたずら"] },
+  { kanji: "軋轢", yomi: ["あつれき"] },
+  { kanji: "杜撰", yomi: ["ずさん"] },
+  { kanji: "胡坐", yomi: ["あぐら"] },
+  { kanji: "礎", yomi: ["いしずえ"] },
+  { kanji: "坩堝", yomi: ["るつぼ"] },
+  { kanji: "陽炎", yomi: ["かげろう"] },
+  { kanji: "鯉幟", yomi: ["こいのぼり"] },
+  { kanji: "刮目", yomi: ["かつもく"] },
+  { kanji: "五月蝿い", yomi: ["うるさい"] },
+  { kanji: "群青", yomi: ["ぐんじょう"] },
+  { kanji: "疼く", yomi: ["うずく"] },
+  { kanji: "僭越", yomi: ["せんえつ"] },
+  { kanji: "微睡む", yomi: ["まどろむ"] },
+  { kanji: "猥褻", yomi: ["わいせつ"] },
+  { kanji: "木乃伊", yomi: ["みいら", "ミイラ"] },
+  { kanji: "轆轤", yomi: ["ろくろ"] },
+  { kanji: "溌溂", yomi: ["はつらつ"] },
+  { kanji: "嗚咽", yomi: ["おえつ"] },
+  { kanji: "蒟蒻", yomi: ["こんにゃく"] },
+  { kanji: "棊子麺", yomi: ["きしめん"] },
+  { kanji: "阿吽", yomi: ["あうん"] },
+  { kanji: "耽る", yomi: ["ふける"] },
+  { kanji: "辻褄", yomi: ["つじつま"] },
+  { kanji: "鳳蝶", yomi: ["あげはちょう"] },
+  { kanji: "心太", yomi: ["ところてん"] },
+  { kanji: "慟哭", yomi: ["どうこく"] },
+  { kanji: "杜氏", yomi: ["とうじ"] },
+  { kanji: "痙攣", yomi: ["けいれん"] },
+  { kanji: "抓る", yomi: ["つねる"] },
+  { kanji: "蝙蝠", yomi: ["こうもり"] },
+  { kanji: "海月", yomi: ["くらげ"] },
+  { kanji: "水母", yomi: ["くらげ"] },
+  { kanji: "炬燵", yomi: ["こたつ"] },
+  { kanji: "十六夜", yomi: ["いざよい"] },
+  { kanji: "牝牡", yomi: ["ひんぼ"] },
+  { kanji: "無花果", yomi: ["いちじく", "イチジク"] },
+  { kanji: "呻く", yomi: ["うめく"] },
+  { kanji: "霹靂", yomi: ["へきれき"] },
+  { kanji: "氷柱", yomi: ["つらら"] },
+  { kanji: "土筆", yomi: ["つくし"] },
+  { kanji: "案山子", yomi: ["かかし"] },
+  { kanji: "黄昏", yomi: ["たそがれ"] },
+  { kanji: "眩暈", yomi: ["めまい"] },
+  { kanji: "弄ぶ", yomi: ["もてあそぶ"] },
+  { kanji: "則る", yomi: ["のっとる"] },
+  { kanji: "騙す", yomi: ["だます"] },
+  { kanji: "箪笥", yomi: ["たんす"] },
+  { kanji: "流鏑馬", yomi: ["やぶさめ"] },
+  { kanji: "麻疹", yomi: ["はしか"] },
+  { kanji: "檸檬", yomi: ["れもん", "レモン"] },
+  { kanji: "柘榴", yomi: ["ざくろ"] },
+  { kanji: "別嬪", yomi: ["べっぴん"] },
+  { kanji: "祝詞", yomi: ["のりと"] },
+  { kanji: "百足", yomi: ["むかで", "ムカデ"] },
+  { kanji: "海星", yomi: ["ひとで", "ヒトデ"] },
+  { kanji: "蕎麦", yomi: ["そば"] },
+  { kanji: "俄雨", yomi: ["にわかあめ"] },
+  { kanji: "天邪鬼", yomi: ["あまのじゃく"] },
+  { kanji: "秋刀魚", yomi: ["さんま", "サンマ"] },
+  { kanji: "山羊", yomi: ["やぎ", "ヤギ"] },
+  { kanji: "土竜", yomi: ["もぐら", "モグラ"] },
+  { kanji: "雫", yomi: ["しずく"] },
+  { kanji: "殺陣", yomi: ["たて"] },
+  { kanji: "間隙", yomi: ["かんげき"] },
+  { kanji: "悪食", yomi: ["あくじき"] },
+  { kanji: "輪廻", yomi: ["りんね"] },
+  { kanji: "刺青", yomi: ["いれずみ"] },
+  { kanji: "仄々", yomi: ["ほのぼの"] },
+  { kanji: "蘊蓄", yomi: ["うんちく"] },
+  { kanji: "昂る", yomi: ["たかぶる"] },
+  { kanji: "焼酎", yomi: ["しょうちゅう"] },
+  { kanji: "政", yomi: ["まつりごと"] },
+  { kanji: "小豆", yomi: ["あずき"] },
+  { kanji: "謀反", yomi: ["むほん"] },
+  { kanji: "数多", yomi: ["あまた"] },
+  { kanji: "裸足", yomi: ["はだし"] },
+  { kanji: "素寒貧", yomi: ["すかんぴん"] },
+  { kanji: "提灯", yomi: ["ちょうちん"] },
+  { kanji: "素人", yomi: ["しろうと"] },
+  { kanji: "贔屓", yomi: ["ひいき"] },
+  { kanji: "高砂", yomi: ["たかさご"] },
+  { kanji: "弔う", yomi: ["とむらう"] },
+  { kanji: "靄", yomi: ["もや"] },
+  { kanji: "秋桜", yomi: ["こすもす", "コスモス"] },
+  { kanji: "魂消る", yomi: ["たまげる"] },
+  { kanji: "潮騒", yomi: ["しおさい"] },
+  { kanji: "相撲", yomi: ["すもう"] },
+  { kanji: "相模", yomi: ["さがみ"] },
+  { kanji: "欅", yomi: ["けやき", "ケヤキ"] },
+  { kanji: "髑髏", yomi: ["どくろ"] },
+  { kanji: "炬燵", yomi: ["こたつ"] },
+  { kanji: "鑑", yomi: ["かがみ"] },
+  { kanji: "拉麺", yomi: ["らーめん"] },
+  { kanji: "古", yomi: ["いにしえ"] },
+  { kanji: "焼売", yomi: ["しゅうまい"] },
+  { kanji: "我利勉", yomi: ["がりべん"] },
+  { kanji: "設ける", yomi: ["もうける"] },
+  { kanji: "駄弁る", yomi: ["だべる"] },
+  { kanji: "鬱陶しい", yomi: ["うっとうしい"] },
+  { kanji: "椅子", yomi: ["いす"] },
+  { kanji: "葬る", yomi: ["ほうむる"] }],
+  3:[{ kanji: "鼓", yomi: ["つづみ"] },
+  { kanji: "公孫樹", yomi: ["いちょう", "イチョウ"] },
+  { kanji: "自惚れる", yomi: ["うぬぼれる"] },
+  { kanji: "天晴", yomi: ["あっぱれ"] },
+  { kanji: "衝立", yomi: ["ついたて"] },
+  { kanji: "桔梗", yomi: ["ききょう", "キキョウ"] },
+  { kanji: "鹿子", yomi: ["かのこ"] },
+  { kanji: "気障", yomi: ["きざ"] },
+  { kanji: "言質", yomi: ["げんち"] },
+  { kanji: "流石", yomi: ["さすが"] },
+  { kanji: "袂", yomi: ["たもと"] },
+  { kanji: "隘路", yomi: ["あいろ"] },
+　{ kanji: "鮎魚女", yomi: ["あいなめ", "アイナメ"] },
+  { kanji: "海鰻", yomi: ["あなご", "アナゴ"] },
+  { kanji: "香魚", yomi: ["あゆ", "アユ"] },
+  { kanji: "年魚", yomi: ["あゆ", "アユ"] },
+  { kanji: "虎魚", yomi: ["おこぜ", "オコゼ"] },
+  { kanji: "旗魚", yomi: ["かじき", "カジキ"] },
+  { kanji: "松魚", yomi: ["かつお", "カツオ"] },
+  { kanji: "魳", yomi: ["かます", "カマス"] },
+  { kanji: "鱚", yomi: ["きす", "キス"] },
+  { kanji: "栄螺", yomi: ["さざえ", "サザエ"] },
+  { kanji: "細魚", yomi: ["さより", "サヨリ"] },
+  { kanji: "針魚", yomi: ["さより", "サヨリ"] },
+  { kanji: "海鼠", yomi: ["なまこ", "ナマコ"] },
+  { kanji: "喋る", yomi: ["しゃべる"] },
+  { kanji: "幕間", yomi: ["まくあい"] },
+  { kanji: "誂える", yomi: ["あつらえる"] },
+  { kanji: "冶金", yomi: ["やきん"] },
+  { kanji: "許嫁", yomi: ["いいなずけ"] },
+  { kanji: "蒙る", yomi: ["こうむる"] },
+  { kanji: "虎杖", yomi: ["いたどり", "イタドリ"] },
+  { kanji: "金雀枝", yomi: ["えにしだ", "エニシダ"] },
+  { kanji: "狗尾草", yomi: ["えのころぐさ", "エノコログサ"] },
+  { kanji: "含羞草", yomi: ["おじぎそう", "オジギソウ"] },
+  { kanji: "燕子花", yomi: ["かきつばた", "カキツバタ"] },
+  { kanji: "杜若", yomi: ["かきつばた", "カキツバタ"] },
+  { kanji: "枳殻", yomi: ["からたち", "カラタチ"] },
+  { kanji: "枸橘", yomi: ["からたち", "カラタチ"] },
+  { kanji: "覇王樹", yomi: ["さぼてん", "サボテン"] },
+  { kanji: "忍冬", yomi: ["すいかずら", "スイカズラ"] },
+  { kanji: "風信子", yomi: ["ひやしんす", "ヒヤシンス"] },
+  { kanji: "四十雀", yomi: ["しじゅうから", "シジュウカラ"] },
+  { kanji: "山雀", yomi: ["やまがら", "ヤマガラ"] },
+  { kanji: "信天翁", yomi: ["あほうどり", "アホウドリ"] },
+  { kanji: "春告鳥", yomi: ["うぐいす", "ウグイス"] },
+  { kanji: "鶉", yomi: ["うずら", "ウズラ"] },
+  { kanji: "鷽", yomi: ["うそ", "ウソ"] },
+  { kanji: "水鶏", yomi: ["くいな", "クイナ"] },
+  { kanji: "十姉妹", yomi: ["じゅうしまつ", "ジュウシマツ"] },
+  { kanji: "鴉", yomi: ["からす", "カラス"] },
+  { kanji: "不如帰", yomi: ["ほととぎす", "ホトトギス"] },
+  { kanji: "木菟", yomi: ["みみずく", "ミミズク"] },
+  { kanji: "香具師", yomi: ["やし", "ヤシ"] },
+  { kanji: "敬虔", yomi: ["けいけん"] },
+  { kanji: "諺", yomi: ["ことわざ"] },
+  { kanji: "窯業", yomi: ["ようぎょう"] },
+  { kanji: "比律賓", yomi: ["ふぃりぴん", "フィリピン"] },
+  { kanji: "越南", yomi: ["べとなむ", "ベトナム"] },
+  { kanji: "東蒲塞", yomi: ["かんぼじあ", "カンボジア"] },
+  { kanji: "以色列", yomi: ["いすらえる", "イスラエル"] },
+  { kanji: "土耳古", yomi: ["とるこ", "トルコ"] },
+  { kanji: "芬蘭", yomi: ["ふぃんらんど", "フィンランド"] },
+  { kanji: "瑞典", yomi: ["すうぇーでん", "スウェーデン"] },
+  { kanji: "諾威", yomi: ["のるうぇー", "ノルウェー"] },
+  { kanji: "丁抹", yomi: ["でんまーく", "デンマーク"] },
+  { kanji: "白耳義", yomi: ["べるぎー", "ベルギー"] },
+  { kanji: "希臘", yomi: ["ぎりしゃ", "ギリシャ"] },
+  { kanji: "墺太利", yomi: ["おーすとりあ", "オーストリア"] },
+  { kanji: "哥倫比亜", yomi: ["ころんびあ", "コロンビア"] },
+  { kanji: "伯剌西爾", yomi: ["ぶらじる", "ブラジル"] },
+  { kanji: "埃及", yomi: ["えじぷと", "エジプト"] },
+  { kanji: "亜爾然丁", yomi: ["あるぜんちん", "アルゼンチン"] },
+  { kanji: "鱧", yomi: ["はも"] },
+  { kanji: "注連縄", yomi: ["しめなわ"] },
+  { kanji: "杮落し", yomi: ["こけらおとし"] },
+  { kanji: "鬘", yomi: ["かつら"] },
+  { kanji: "魘される", yomi: ["うなされる"] },
+  { kanji: "論う", yomi: ["あげつらう"] },
+  { kanji: "矍鑠", yomi: ["かくしゃく"] },
+  { kanji: "誰何", yomi: ["すいか"] },
+  { kanji: "厠", yomi: ["かわや"] },
+  { kanji: "敷衍", yomi: ["ふえん"] },
+  { kanji: "靨", yomi: ["えくぼ"] },
+  { kanji: "面皰", yomi: ["にきび"] },
+  { kanji: "若気る", yomi: ["にやける"] },
+  { kanji: "木通", yomi: ["あけび"] },
+  { kanji: "束子", yomi: ["たわし"] },
+  { kanji: "宿酔", yomi: ["ふつかよい"] },
+  { kanji: "何卒", yomi: ["なにとぞ"] },
+  { kanji: "芒", yomi: ["すすき"] },
+  { kanji: "雖も", yomi: ["いえども"] },
+  { kanji: "靡く", yomi: ["なびく"] },
+  { kanji: "揶揄う", yomi: ["からかう"] },
+  { kanji: "些か", yomi: ["いささか"] },
+  { kanji: "玲瓏", yomi: ["れいろう"] },
+  { kanji: "簪", yomi: ["かんざし"] },
+  { kanji: "鈍色", yomi: ["にびいろ"] },
+  { kanji: "諂う", yomi: ["へつらう"] },
+  { kanji: "吃逆", yomi: ["しゃっくり"] },
+  { kanji: "撥", yomi: ["ばち"] },
+  { kanji: "寿ぐ", yomi: ["ことほぐ"] },
+  { kanji: "炯眼", yomi: ["けいがん"] },
+  { kanji: "紙魚", yomi: ["しみ"] },
+  { kanji: "瓦斯", yomi: ["がす", "ガス"] },
+  { kanji: "衒う", yomi: ["てらう"] },
+  { kanji: "忝い", yomi: ["かたじけない"] },
+  { kanji: "骨牌", yomi: ["かるた", "カルタ"] },
+  { kanji: "鋸", yomi: ["のこぎり"] },
+  { kanji: "蚯蚓", yomi: ["みみず"] },
+  { kanji: "蘊蓄", yomi: ["うんちく"] },
+  { kanji: "憾み", yomi: ["うらみ"] },
+  { kanji: "塗れる", yomi: ["まみれる"] },
+  { kanji: "掏摸", yomi: ["すり"] },
+  { kanji: "蟀谷", yomi: ["こめかみ"] },
+  { kanji: "顳顬", yomi: ["こめかみ"] },
+  { kanji: "抉る", yomi: ["えぐる"] },
+  { kanji: "贖う", yomi: ["あがなう"] },
+  { kanji: "交交", yomi: ["こもごも"] },
+  { kanji: "蝶番", yomi: ["ちょうつがい"] },
+  { kanji: "女郎花", yomi: ["おみなえし"] },
+  { kanji: "欠片", yomi: ["かけら"] },
+  { kanji: "禊", yomi: ["みそぎ"] },
+  { kanji: "惚気る", yomi: ["のろける"] },
+  { kanji: "夷顔", yomi: ["えびすがお"] },
+  { kanji: "暖簾", yomi: ["のれん"] },
+  { kanji: "銜える", yomi: ["くわえる"] },
+  { kanji: "嚏", yomi: ["くしゃみ"] },
+  { kanji: "守宮", yomi: ["やもり", "ヤモリ"] },
+  { kanji: "樵", yomi: ["きこり"] },
+  { kanji: "寄生木", yomi: ["やどりぎ"] },
+  { kanji: "齷齪", yomi: ["あくせく"] },
+  { kanji: "蠱惑", yomi: ["こわく"] },
+  { kanji: "東雲", yomi: ["しののめ"] },
+  { kanji: "肌理", yomi: ["きめ"] },
+  { kanji: "魚籠", yomi: ["びく"] },
+  { kanji: "燻る", yomi: ["くすぶる"] },
+  { kanji: "努努", yomi: ["ゆめゆめ"] },
+  { kanji: "周章てる", yomi: ["あわてる"] },
+  { kanji: "鹿尾菜", yomi: ["ひじき"] },
+  { kanji: "犇めく", yomi: ["ひしめく"] },
+  { kanji: "羊歯", yomi: ["しだ"] },
+  { kanji: "磊落", yomi: ["らいらく"] },
+  { kanji: "鳩尾", yomi: ["みぞおち", "みずおち"] },
+  { kanji: "噤む", yomi: ["つぐむ"] },
+  { kanji: "九十九折", yomi: ["つづらおり"] },
+  { kanji: "轍", yomi: ["わだち"] },
+  { kanji: "一入", yomi: ["ひとしお"] },
+  { kanji: "餞", yomi: ["はなむけ"] },
+  { kanji: "玉蜀黍", yomi: ["とうもろこし"] },
+  { kanji: "柘植", yomi: ["つげ"] },
+  { kanji: "罹る", yomi: ["かかる"] },
+  { kanji: "螺子", yomi: ["ねじ"] },
+  { kanji: "襖", yomi: ["ふすま"] },
+  { kanji: "擽る", yomi: ["くすぐる"] },
+  { kanji: "草臥れる", yomi: ["くたびれる"] },
+  { kanji: "鰆", yomi: ["さわら", "サワラ"] },
+  { kanji: "劈く", yomi: ["つんざく"] },
+  { kanji: "囀る", yomi: ["さえずる"] },
+  { kanji: "破落戸", yomi: ["ごろつき"] },
+  { kanji: "無頼漢", yomi: ["ごろつき"] },
+  { kanji: "蛹", yomi: ["さなぎ"] },
+  { kanji: "瘋癲", yomi: ["ふうてん"] },
+  { kanji: "蹲る", yomi: ["うずくまる"] },
+  { kanji: "恙無い", yomi: ["つつがない"] },
+  { kanji: "辷る", yomi: ["すべる"] },
+  { kanji: "筏", yomi: ["いかだ"] },
+  { kanji: "算盤", yomi: ["そろばん"] },
+  { kanji: "雀斑", yomi: ["そばかす"] },
+  { kanji: "所謂", yomi: ["いわゆる"] },
+  { kanji: "踝", yomi: ["くるぶし"] },
+  { kanji: "蔕", yomi: ["へた"] },
+  { kanji: "天鵞絨", yomi: ["びろーど", "ビロード"] },
+  { kanji: "肖る", yomi: ["あやかる"] },
+  { kanji: "石礫", yomi: ["いしつぶて"] },
+  { kanji: "慮る", yomi: ["おもんぱかる"] },
+  { kanji: "飛白", yomi: ["かすり"] },
+  { kanji: "橇", yomi: ["そり"] },
+  { kanji: "胡桃", yomi: ["くるみ"] },
+  { kanji: "嘯く", yomi: ["うそぶく"] },
+  { kanji: "箒", yomi: ["ほうき"] },
+  { kanji: "匍匐", yomi: ["ほふく"] },
+  { kanji: "釦", yomi: ["ぼたん"] },
+  { kanji: "鈕", yomi: ["ぼたん"] },
+  { kanji: "蜉蝣", yomi: ["かげろう", "カゲロウ"] },
+  { kanji: "忸怩", yomi: ["じくじ"] },
+  { kanji: "琺瑯", yomi: ["ほうろう"] },
+  { kanji: "鞦韆", yomi: ["ぶらんこ"] },
+  { kanji: "審らか", yomi: ["つまびらか"] },
+  { kanji: "詳らか", yomi: ["つまびらか"] },
+  { kanji: "鰓", yomi: ["えら"] },
+  { kanji: "骰子", yomi: ["さいころ"] },
+  { kanji: "旋毛", yomi: ["つむじ"] },
+  { kanji: "雨曝し", yomi: ["あまざらし"] },
+  { kanji: "所以", yomi: ["ゆえん"] },
+  { kanji: "松明", yomi: ["たいまつ"] },
+  { kanji: "概ね", yomi: ["おおむね"] },
+  { kanji: "睫", yomi: ["まつげ"] },
+  { kanji: "雪洞", yomi: ["ぼんぼり"] },
+  { kanji: "行灯", yomi: ["あんどん"] },
+  { kanji: "鼾", yomi: ["いびき"] },
+  { kanji: "万年青", yomi: ["おもと", "オモト"] },
+  { kanji: "漲る", yomi: ["みなぎる"] },
+  { kanji: "手薬煉", yomi: ["てぐすね"] },
+  { kanji: "雄蕊", yomi: ["おしべ"] },
+  { kanji: "鼬", yomi: ["いたち", "イタチ"] },
+  { kanji: "慇懃", yomi: ["いんぎん"] },
+  { kanji: "海豹", yomi: ["あざらし", "アザラシ"] },
+  { kanji: "蔑ろ", yomi: ["ないがしろ"] },
+  { kanji: "鶏冠", yomi: ["とさか", "けいかん"] },
+  { kanji: "蓼", yomi: ["たで", "タデ"] },
+  { kanji: "俤", yomi: ["おもかげ"] },
+  { kanji: "胼胝", yomi: ["たこ"] },
+  { kanji: "蛞蝓", yomi: ["なめくじ", "ナメクジ"] },
+  { kanji: "霙", yomi: ["みぞれ"] },
+  { kanji: "嘴", yomi: ["くちばし"] },
+  { kanji: "傀儡", yomi: ["かいらい"] },
+  { kanji: "靄", yomi: ["もや"] },
+  { kanji: "魁", yomi: ["さきがけ"] },
+  { kanji: "瘡蓋", yomi: ["かさぶた"] },
+  { kanji: "所縁", yomi: ["ゆかり"] },
+  { kanji: "大蒜", yomi: ["にんにく", "ニンニク"] },
+  { kanji: "黴菌", yomi: ["ばいきん"] },
+  { kanji: "懇ろ", yomi: ["ねんごろ"] },
+  { kanji: "蝸牛", yomi: ["かたつむり", "カタツムリ"] },
+  { kanji: "泥む", yomi: ["なずむ"] },
+  { kanji: "刷毛", yomi: ["はけ"] },
+  { kanji: "躱す", yomi: ["かわす"] },
+  { kanji: "予て", yomi: ["かねて"] },
+  { kanji: "予め", yomi: ["あらかじめ"] },
+  { kanji: "八仙花", yomi: ["あじさい", "アジサイ"] },
+  { kanji: "木天蓼", yomi: ["またたび", "マタタビ"] },
+  { kanji: "風信子", yomi: ["ひやしんす", "ヒヤシンス"] },
+  { kanji: "甘蕉", yomi: ["ばなな", "カンショウ", "バナナ"] },
+  { kanji: "覆盆子", yomi: ["いちご"] },
+  { kanji: "映日果", yomi: ["いちじく"] },
+  { kanji: "通草", yomi: ["あけび"] },
+  { kanji: "朱欒", yomi: ["ざぼん", "ザボン"] },
+  { kanji: "蕃瓜樹", yomi: ["ぱぱいや", "パパイヤ"] },
+  { kanji: "悄気る", yomi: ["しょげる"] },
+  { kanji: "艝", yomi: ["そり"] },
+  { kanji: "橇", yomi: ["そり"] },
+  { kanji: "襷", yomi: ["たすき"] },
+  { kanji: "刺蛾", yomi: ["いらが", "イラガ"] },
+  { kanji: "虱", yomi: ["しらみ", "シラミ"] },
+  { kanji: "螽斯", yomi: ["きりぎりす", "キリギリス"] },
+  { kanji: "天牛", yomi: ["かみきりむし", "カミキリムシ"] },
+  { kanji: "飛蝗", yomi: ["ばった", "バッタ"] },
+  { kanji: "蟷螂", yomi: ["かまきり", "カマキリ"] },
+  { kanji: "瓢虫", yomi: ["てんとうむし", "テントウムシ"] },
+  { kanji: "蜩", yomi: ["ひぐらし", "ヒグラシ"] },
+  { kanji: "杜鵑", yomi: ["ほととぎす", "ホトトギス"] },
+  { kanji: "蜀魂", yomi: ["ほととぎす", "ホトトギス"] },
+  { kanji: "沓手鳥", yomi: ["ほととぎす", "ホトトギス"] },
+  { kanji: "海猟", yomi: ["らっこ", "ラッコ"] },
+  { kanji: "海象", yomi: ["せいうち", "セイウチ"] },
+  { kanji: "膃肭臍", yomi: ["おっとせい", "オットセイ"] },
+  { kanji: "腓返り", yomi: ["こむらがえり"] },
+  { kanji: "靨", yomi: ["えくぼ"] },
+  { kanji: "嗽", yomi: ["うがい"] },
+  { kanji: "痘痕", yomi: ["あばた"] },
+  { kanji: "雲脂", yomi: ["ふけ"] },
+  { kanji: "羊栖菜", yomi: ["ひじき"] },
+  { kanji: "凩", yomi: ["こがらし"] },
+  { kanji: "鯰", yomi: ["なまず"] },
+  { kanji: "公魚", yomi: ["わかさぎ", "ワカサギ"] },
+  { kanji: "鰙", yomi: ["わかさぎ", "ワカサギ"] },
+  { kanji: "鱈", yomi: ["たら", "タラ"] },
+  { kanji: "鯑", yomi: ["かずのこ", "カズノコ"] },
+  { kanji: "鰰", yomi: ["はたはた", "ハタハタ"] },
+  { kanji: "翻車魚", yomi: ["まんぼう", "マンボウ"] },
+  { kanji: "鯊", yomi: ["はぜ", "ハゼ"] },
+  { kanji: "浣熊", yomi: ["あらいぐま", "アライグマ"] },
+  { kanji: "栗鼠", yomi: ["りす", "リス"] },
+  { kanji: "蜥蜴", yomi: ["とかげ", "トカゲ"] },
+  { kanji: "馴鹿", yomi: ["となかい", "トナカイ"] },
+  { kanji: "熊猫", yomi: ["ぱんだ", "パンダ"] },
+  { kanji: "更格盧", yomi: ["かんがるー", "カンガルー"] },
+  { kanji: "鼬鼠", yomi: ["いたち", "イタチ"] },
+  { kanji: "三和土", yomi: ["たたき"] },
+  { kanji: "颪", yomi: ["おろし"] },
+  { kanji: "磔", yomi: ["はりつけ"] },
+  { kanji: "如露", yomi: ["じょうろ", "じょろ"] },
+  { kanji: "木霊", yomi: ["こだま"] },
+  { kanji: "旋毛", yomi: ["つむじ", "せんもう"] },
+  { kanji: "含羞む", yomi: ["はにかむ"] },
+  { kanji: "勾引かす", yomi: ["かどわかす"] },
+  { kanji: "潤ける", yomi: ["ふやける"] },
+  { kanji: "紙撚", yomi: ["こより"] },
+  { kanji: "縹色", yomi: ["はなだいろ"] },
+  { kanji: "鼈", yomi: ["すっぽん", "スッポン"] },
+  { kanji: "蝋燭", yomi: ["ろうそく"] },
+  { kanji: "黴", yomi: ["かび"] },
+  { kanji: "鑿", yomi: ["のみ"] },
+  { kanji: "齎す", yomi: ["もたらす"] },
+  { kanji: "埋める", yomi: ["うずめる"] },
+  { kanji: "搗ち割り", yomi: ["かちわり"] },
+  { kanji: "誘きだす", yomi: ["おびきだす"] },
+  { kanji: "閂", yomi: ["かんぬき"] },
+  { kanji: "泥濘み", yomi: ["ぬかるみ"] },
+  { kanji: "静寂", yomi: ["しじま"] },
+  { kanji: "柵", yomi: ["しがらみ"] },
+  { kanji: "白鼬", yomi: ["おこじょ"] },
+  { kanji: "目脂", yomi: ["めやに"] },
+  { kanji: "褌", yomi: ["ふんどし"] },
+  { kanji: "縦", yomi: ["ほしいまま"] },
+  { kanji: "簾", yomi: ["すだれ"] },
+  { kanji: "鯱", yomi: ["しゃちほこ"] },
+  { kanji: "櫃塗し", yomi: ["ひつまぶし"] },
+  { kanji: "納戸", yomi: ["なんど"] },
+  { kanji: "鉄亜鈴", yomi: ["てつあれい"] },
+  { kanji: "長閑", yomi: ["のどか"] },
+  { kanji: "微酔い", yomi: ["ほろよい"] },
+  { kanji: "嘴広鸛", yomi: ["はしびろこう"] },
+  { kanji: "枇杷", yomi: ["びわ"] },
+  { kanji: "餞", yomi: ["はなむけ"] },
+  { kanji: "真珠麿", yomi: ["ましゅまろ"] },
+  { kanji: "囮", yomi: ["おとり"] },
+  { kanji: "海豚", yomi: ["いるか"] },
+  { kanji: "心算", yomi: ["つもり"] },
+  { kanji: "石南花", yomi: ["しゃくなげ"] },
+  { kanji: "花魁", yomi: ["おいらん"] },
+  { kanji: "栴檀", yomi: ["せんだん", "センダン"] },
+  { kanji: "鱓", yomi: ["うつぼ", "ごまめ", "ウツボ", "ゴマメ"] },
+  { kanji: "箒", yomi: ["ほうき"] },
+  { kanji: "鎬", yomi: ["しのぎ"] },
+  { kanji: "溌剌", yomi: ["はつらつ"] },
+  { kanji: "椿", yomi: ["つばき", "ツバキ"] },
+  { kanji: "榎", yomi: ["えのき", "エノキ"] },
+  { kanji: "柊", yomi: ["ひいらぎ", "ヒイラギ"] },
+  { kanji: "八重葎", yomi: ["やえむぐら", "ヤエムグラ"] },
+  { kanji: "罌粟", yomi: ["けし", "ケシ"] },
+  { kanji: "庶幾う", yomi: ["こいねがう"] },
+  { kanji: "飯事", yomi: ["ままごと"] },
+  { kanji: "貝独楽", yomi: ["べいごま"] },
+  { kanji: "薇", yomi: ["ぜんまい"] },
+  { kanji: "剰え", yomi: ["あまつさえ"] },
+  { kanji: "筏", yomi: ["いかだ"] },
+  { kanji: "蹄", yomi: ["ひづめ"] },
+  { kanji: "木芥子", yomi: ["こけし"] },
+  { kanji: "角力", yomi: ["すもう"] },
+  { kanji: "機関", yomi: ["からくり"] },
+  { kanji: "粁", yomi: ["きろめーとる", "キロメートル"] },
+  { kanji: "留", yomi: ["るーぶる", "ルーブル"] },
+  { kanji: "瓲", yomi: ["とん", "トン"] },
+  { kanji: "糎", yomi: ["せんちめーとる", "センチメートル"] },
+  { kanji: "碼", yomi: ["やーど", "ヤード"] },
+  { kanji: "瓩", yomi: ["きろぐらむ", "キログラム"] },
+  { kanji: "粍", yomi: ["みりめーとる", "ミリメートル"] },
+  { kanji: "弗", yomi: ["どる", "ドル"] },
+  { kanji: "哩", yomi: ["まいる", "マイル"] },
+  { kanji: "竏", yomi: ["きろりっとる", "キロリットル"] },
+  { kanji: "瓱", yomi: ["みりぐらむ", "ミリグラム"] },
+  { kanji: "竕", yomi: ["でしりっとる", "デシリットル"] },
+  { kanji: "乾酪", yomi: ["ちーず", "チーズ"] },
+  { kanji: "三鞭酒", yomi: ["しゃんぱん", "シャンパン"] },
+  { kanji: "榊", yomi: ["さかき", "サカキ"] },
+  { kanji: "攀じる", yomi: ["よじる"] },
+  { kanji: "誑かす", yomi: ["たぶらかす"] },
+  { kanji: "巷", yomi: ["ちまた"] },
+  { kanji: "俎", yomi: ["まないた"] },
+  { kanji: "盥", yomi: ["たらい"] },
+  { kanji: "仮漆", yomi: ["にす"] },
+  { kanji: "端折る", yomi: ["はしょる"] },
+  { kanji: "首肯く", yomi: ["うなずく"] },
+  { kanji: "帷", yomi: ["とばり", "かたびら"] },
+  { kanji: "葛籠", yomi: ["つづら"] },
+  { kanji: "御虎子", yomi: ["おまる"] },
+  { kanji: "狒狒", yomi: ["ひひ", "ヒヒ"] },
+  { kanji: "溝鼠", yomi: ["どぶねずみ", "ドブネズミ"] },
+  { kanji: "豪猪", yomi: ["やまあらし", "ヤマアラシ"] },
+  { kanji: "茅屋", yomi: ["ぼうおく"] },
+  { kanji: "乃ち", yomi: ["すなわち"] },
+  { kanji: "科白", yomi: ["せりふ"] },
+  { kanji: "鉄", yomi: ["くろがね"] },
+  { kanji: "銀", yomi: ["しろがね"] },
+  { kanji: "銅", yomi: ["あかがね"] },
+  { kanji: "漸く", yomi: ["ようやく"] },
+  { kanji: "鹿驚", yomi: ["かかし"] },
+  { kanji: "鹿威し", yomi: ["ししおどし"] },
+  { kanji: "袢纏", yomi: ["はんてん"] },
+  { kanji: "鴨嘴", yomi: ["かものはし", "カモノハシ"] },
+  { kanji: "砂滑", yomi: ["すなめり", "スナメリ"] },
+  { kanji: "背美鯨", yomi: ["せみくじら", "セミクジラ"] },
+  { kanji: "篦坊", yomi: ["べらぼう"] },
+  { kanji: "為人", yomi: ["ひととなり"] },
+  { kanji: "防人", yomi: ["さきもり"] },
+  { kanji: "御伽噺", yomi: ["おとぎばなし"] },
+  { kanji: "設える", yomi: ["しつらえる"] },
+  { kanji: "麗らか", yomi: ["うららか"] },
+  { kanji: "禰宜", yomi: ["ねぎ"] },
+  { kanji: "紲", yomi: ["きずな"] },
+  { kanji: "柚餅子", yomi: ["ゆべし"] },
+  { kanji: "切蒲英", yomi: ["きりたんぽ"] },
+  { kanji: "萎れる", yomi: ["しおれる"] },
+  { kanji: "卸金", yomi: ["おろしがね"] },
+  { kanji: "抽斗", yomi: ["ひきだし"] },
+  { kanji: "素朧", yomi: ["そぼろ"] },
+  { kanji: "蝕む", yomi: ["むしばむ"] },
+  { kanji: "嘶く", yomi: ["いななく"] },
+  { kanji: "謀", yomi: ["はかりごと"] },
+  { kanji: "御御御付", yomi: ["おみおつけ"] },
+  { kanji: "無礼る", yomi: ["なめる"] }],
+  4:[{ kanji: "蔓茘枝", yomi: ["つるれいし", "ツルレイシ", "ごーやー", "ゴーヤー"] },
+  { kanji: "老婆魚", yomi: ["あんこう", "アンコウ"] },
+  { kanji: "望潮魚", yomi: ["いいだこ", "イイダコ"] },
+  { kanji: "石首魚", yomi: ["いしもち", "イシモチ"] },
+  { kanji: "鯎", yomi: ["うぐい", "ウグイ"] },
+  { kanji: "鰧", yomi: ["おこぜ", "オコゼ"] },
+  { kanji: "鯡", yomi: ["にしん", "ニシン"] },
+  { kanji: "春告魚", yomi: ["にしん", "ニシン"] },
+  { kanji: "山桜桃", yomi: ["ゆすらうめ", "ユスラウメ"] },
+  { kanji: "鳶尾", yomi: ["いちはつ", "イチハツ"] },
+  { kanji: "莠", yomi: ["えのころぐさ", "エノコログサ"] },
+  { kanji: "洎夫藍", yomi: ["さふらん", "サフラン"] },
+  { kanji: "接骨木", yomi: ["にわとこ", "ニワトコ"] },
+  { kanji: "秦吉了", yomi: ["いんこ", "インコ"] },
+  { kanji: "鳦", yomi: ["つばめ"] },
+  { kanji: "鴟鵂", yomi: ["みみずく", "ミミズク"] },
+{ kanji: "鴃", yomi: ["もず"] },
+  { kanji: "鶪", yomi: ["もず"] },
+  { kanji: "塒", yomi: ["ねぐら"] },
+  { kanji: "就中", yomi: ["なかんずく"] },
+  { kanji: "栖", yomi: ["すみか"] },
+  { kanji: "社稷", yomi: ["しゃしょく"] },
+  { kanji: "忍辱", yomi: ["にんにく"] },
+  { kanji: "叢", yomi: ["くさむら"] },
+  { kanji: "轡", yomi: ["くつわ"] },
+  { kanji: "薊", yomi: ["あざみ"] },
+  { kanji: "犒う", yomi: ["ねぎらう"] },
+  { kanji: "嫂", yomi: ["あによめ"] },
+  { kanji: "宛がう", yomi: ["あてがう"] },
+  { kanji: "鯨波", yomi: ["とき"] },
+  { kanji: "未通女", yomi: ["おぼこ"] },
+  { kanji: "希う", yomi: ["こいねがう"] },
+  { kanji: "謗る", yomi: ["そしる"] },
+  { kanji: "蕣", yomi: ["あさがお", "アサガオ"] },
+  { kanji: "繙く", yomi: ["ひもとく"] },
+  { kanji: "綛", yomi: ["かすり"] },
+  { kanji: "筵", yomi: ["むしろ"] },
+  { kanji: "粽", yomi: ["ちまき"] },
+  { kanji: "吝か", yomi: ["やぶさか"] },
+  { kanji: "為体", yomi: ["ていたらく"] },
+  { kanji: "美人局", yomi: ["つつもたせ"] },
+  { kanji: "閲する", yomi: ["けみする"] },
+  { kanji: "晩生", yomi: ["おくて"] },
+  { kanji: "鎹", yomi: ["かすがい"] },
+  { kanji: "押取刀", yomi: ["おっとりがたな"] },
+  { kanji: "甍", yomi: ["いらか"] },
+  { kanji: "夥しい", yomi: ["おびただしい"] },
+  { kanji: "鞣す", yomi: ["なめす"] },
+  { kanji: "仕舞屋", yomi: ["しもたや"] },
+  { kanji: "躙る", yomi: ["にじる"] },
+  { kanji: "喙", yomi: ["くちばし"] },
+  { kanji: "垂とする", yomi: ["なんなん"] },
+  { kanji: "嬶", yomi: ["かかあ"] },
+  { kanji: "胡枝花", yomi: ["はぎ", "ハギ"] },
+  { kanji: "紫薇", yomi: ["さるすべり", "サルスベリ"] },
+  { kanji: "紫丁香花", yomi: ["らいらっく", "ライラック", "むらさきはしどい", "ムラサキハシドイ"] },
+  { kanji: "酸模", yomi: ["すかんぽ", "スカンポ"] },
+  { kanji: "巻丹", yomi: ["おにゆり", "オニユリ"] },
+  { kanji: "虎耳草", yomi: ["ゆきのした", "ユキノシタ"] },
+  { kanji: "萵苣", yomi: ["ちしゃ", "ちさ", "れたす", "レタス"] },
+  { kanji: "橄欖", yomi: ["おりーぶ", "オリーブ", "かんらん", "カンラン"] },
+  { kanji: "薑", yomi: ["しょうが"] },
+  { kanji: "舅", yomi: ["しゅうと"] },
+  { kanji: "倅", yomi: ["せがれ"] },
+  { kanji: "躮", yomi: ["せがれ"] },
+  { kanji: "玄孫", yomi: ["やしゃご", "げんそん"] },
+  { kanji: "直会", yomi: ["なおらい"] },
+  { kanji: "大幣", yomi: ["おおぬさ"] },
+  { kanji: "袰", yomi: ["ほろ"] },
+  { kanji: "俥", yomi: ["くるま"] },
+  { kanji: "屶", yomi: ["なた"] },
+  { kanji: "錺", yomi: ["かざり"] },
+  { kanji: "遖", yomi: ["あっぱれ"] },
+  { kanji: "鎺", yomi: ["はばき"] },
+  { kanji: "窩主買", yomi: ["けいずかい"] },
+  { kanji: "絡新婦", yomi: ["じょろうぐも", "ジョロウグモ"] },
+  { kanji: "蛉蛄", yomi: ["にいにいぜみ", "ニイニイゼミ"] },
+  { kanji: "半風子", yomi: ["しらみ", "シラミ"] },
+  { kanji: "吉丁虫", yomi: ["たまむし", "タマムシ"] },
+  { kanji: "寒蝉", yomi: ["つくつくぼうし", "ツクツクボウシ"] },
+  { kanji: "蟎", yomi: ["だに"] },
+  { kanji: "金亀子", yomi: ["こがねむし", "コガネムシ"] },
+  { kanji: "紅娘", yomi: ["てんとうむし", "テントウムシ"] },
+  { kanji: "豆娘", yomi: ["いととんぼ", "イトトンボ"] },
+  { kanji: "蜈蚣", yomi: ["むかで", "ムカデ"] },
+  { kanji: "壁虎", yomi: ["やもり", "ヤモリ"] },
+  { kanji: "魚狗", yomi: ["かわせみ", "カワセミ"] },
+  { kanji: "葦雀", yomi: ["よしきり", "ヨシキリ"] },
+  { kanji: "鶚", yomi: ["みさご", "ミサゴ"] },
+  { kanji: "繍眼児", yomi: ["めじろ", "メジロ"] },
+  { kanji: "画眉鳥", yomi: ["ほおじろ", "ホオジロ"] },
+  { kanji: "桃花鳥", yomi: ["とき", "トキ"] },
+  { kanji: "告天子", yomi: ["ひばり", "ヒバリ"] },
+  { kanji: "矮鶏", yomi: ["ちゃぼ", "チャボ"] },
+  { kanji: "鵯", yomi: ["ひよどり", "ヒヨドリ"] },
+  { kanji: "海盤車", yomi: ["ひとで", "ヒトデ"] },
+  { kanji: "海狗", yomi: ["おっとせい", "オットセイ"] },
+  { kanji: "皸", yomi: ["あかぎれ"] },
+  { kanji: "皹", yomi: ["あかぎれ"] },
+  { kanji: "痔", yomi: ["しもがさ"] },
+  { kanji: "噦く", yomi: ["むかつく"] },
+  { kanji: "齲", yomi: ["むしば"] },
+  { kanji: "塩汁", yomi: ["しょっつる"] },
+  { kanji: "羹", yomi: ["あつもの"] },
+  { kanji: "鱲子", yomi: ["からすみ"] },
+  { kanji: "五加", yomi: ["うこぎ"] },
+  { kanji: "白雨", yomi: ["ゆうだち"] },
+{ kanji: "虎落笛", yomi: ["もがりぶえ"] },
+  { kanji: "牛尾魚", yomi: ["こち", "コチ"] },
+  { kanji: "石伏魚", yomi: ["ごり", "ゴリ"] },
+  { kanji: "鮴", yomi: ["ごり", "ゴリ"] },
+  { kanji: "魸", yomi: ["なまず"] },
+  { kanji: "石決明", yomi: ["あわび", "アワビ"] },
+  { kanji: "大口魚", yomi: ["たら", "タラ"] },
+  { kanji: "鯲", yomi: ["どじょう", "ドジョウ"] },
+  { kanji: "鰮", yomi: ["いわし", "イワシ"] },
+  { kanji: "鱩", yomi: ["はたはた", "ハタハタ"] },
+  { kanji: "鬼頭魚", yomi: ["しいら", "シイラ"] },
+  { kanji: "勒魚", yomi: ["しいら", "シイラ"] },
+  { kanji: "鱪", yomi: ["しいら", "シイラ"] },
+  { kanji: "鰈沙魚", yomi: ["ひらめ", "ヒラメ"] },
+  { kanji: "鞋底魚", yomi: ["したびらめ", "シタビラメ"] },
+  { kanji: "馬鮫魚", yomi: ["さわら", "サワラ"] },
+  { kanji: "蝦虎魚", yomi: ["はぜ", "ハゼ"] },
+  { kanji: "青串魚", yomi: ["さんま", "サンマ"] },
+  { kanji: "羊駝", yomi: ["らま", "ラマ"] },
+  { kanji: "飯匙倩", yomi: ["はぶ", "ハブ"] },
+  { kanji: "樹懶", yomi: ["なまけもの", "ナマケモノ"] },
+  { kanji: "偃鼠", yomi: ["もぐら", "モグラ"] },
+  { kanji: "烽", yomi: ["のろし"] },
+  { kanji: "梲", yomi: ["うだつ", "うだち", "つえ"] },
+  { kanji: "日照雨", yomi: ["そばえ"] },
+  { kanji: "硲", yomi: ["はざま"] },
+  { kanji: "圷", yomi: ["あくつ"] },
+  { kanji: "噯", yomi: ["おくび"] },
+  { kanji: "甘露子", yomi: ["ちょろぎ", "チョロギ"] },
+  { kanji: "玉環菜", yomi: ["ちょろぎ", "チョロギ"] },
+  { kanji: "裲襠", yomi: ["うちかけ", "りょうとう"] },
+  { kanji: "眥", yomi: ["まなじり"] },
+  { kanji: "熱", yomi: ["ほとぼり"] },
+  { kanji: "落葉松", yomi: ["からまつ", "カラマツ"] },
+  { kanji: "之繞", yomi: ["しんにょう", "しんにゅう"] },
+  { kanji: "総角", yomi: ["あげまき"] },
+  { kanji: "枸杞", yomi: ["くこ", "クコ"] },
+  { kanji: "揺蕩う", yomi: ["たゆたう"] },
+  { kanji: "擤む", yomi: ["かむ"] },
+  { kanji: "迸る", yomi: ["ほとばしる"] },
+  { kanji: "迸り", yomi: ["とばっちり"] },
+  { kanji: "巴", yomi: ["うずまき"] },
+  { kanji: "伊弉諾", yomi: ["いざなぎ"] },
+  { kanji: "朮", yomi: ["おけら"] },
+  { kanji: "絮い", yomi: ["くどい"] },
+  { kanji: "篳篥", yomi: ["ひちりき"] },
+  { kanji: "詈る", yomi: ["ののしる"] },
+  { kanji: "袒裼裸裎", yomi: ["たんせきらてい"] },
+  { kanji: "荅", yomi: ["あずき"] },
+  { kanji: "蛻", yomi: ["もぬけ"] },
+  { kanji: "娶る", yomi: ["めとる"] },
+  { kanji: "鯳", yomi: ["すけとうだら"] },
+  { kanji: "感ける", yomi: ["かまける"] },
+  { kanji: "蹈鞴", yomi: ["たたら"] },
+  { kanji: "坤", yomi: ["ひつじさる"] },
+  { kanji: "水蠆", yomi: ["やご"] },
+  { kanji: "鏖", yomi: ["みなごろし"] },
+  { kanji: "屠る", yomi: ["ほふる"] },
+  { kanji: "犢", yomi: ["こうし"] },
+  { kanji: "没分暁漢", yomi: ["わからずや"] },
+  { kanji: "休い", yomi: ["さいわい"] },
+  { kanji: "肉膾", yomi: ["ゆっけ"] },
+  { kanji: "𩻩", yomi: ["まぐろ"] },
+  { kanji: "莨", yomi: ["たばこ"] },
+  { kanji: "誼", yomi: ["よしみ"] },
+  { kanji: "白地", yomi: ["あからさま"] },
+  { kanji: "嘸かし", yomi: ["さぞかし"] },
+  { kanji: "縺れる", yomi: ["もつれる"] },
+  { kanji: "楚蟹", yomi: ["ずわいがに"] },
+  { kanji: "咖啡涅", yomi: ["かふぇいん", "カフェイン"] },
+  { kanji: "窘", yomi: ["たしなめる"] },
+  { kanji: "怎で", yomi: ["いかで"] },
+  { kanji: "湎む", yomi: ["しずむ"] },
+  { kanji: "以為", yomi: ["おもえらく"] },
+  { kanji: "打切棒", yomi: ["ぶっきらぼう"] },
+  { kanji: "匕首", yomi: ["あいくち", "ひしゅ"] },
+  { kanji: "擡げる", yomi: ["もたげる"] },
+  { kanji: "諾う", yomi: ["うべなう"] },
+  { kanji: "傅く", yomi: ["かしずく"] },
+  { kanji: "楸", yomi: ["ひさぎ", "ヒサギ"] },
+  { kanji: "諡", yomi: ["おくりな"] },
+  { kanji: "掌", yomi: ["たなごころ"] },
+  { kanji: "掌", yomi: ["てのひら", "たなうら"] },
+  { kanji: "腸", yomi: ["はらわた"] },
+  { kanji: "霓", yomi: ["にじ"] },
+  { kanji: "悍ましい", yomi: ["おぞましい"] },
+  { kanji: "翻筋斗打つ", yomi: ["もんどりうつ"] },
+  { kanji: "暹羅猫", yomi: ["しゃむねこ"] },
+  { kanji: "取次筋斗", yomi: ["しどろもどろ"] },
+  { kanji: "小聡明い", yomi: ["あざとい"] },
+  { kanji: "功夫", yomi: ["かんふー", "カンフー"] },
+  { kanji: "跆拳道", yomi: ["てこんどー", "テコンドー"] },
+  { kanji: "呏", yomi: ["がろん", "ガロン"] },
+  { kanji: "磅", yomi: ["ぽんど", "ポンド"] },
+  { kanji: "吋", yomi: ["いんち", "インチ"] },
+  { kanji: "呎", yomi: ["ふぃーと", "フィート"] },
+  { kanji: "茶梅", yomi: ["さざんか", "サザンカ"] },
+  { kanji: "凌霄花", yomi: ["のうぜんかずら", "ノウゼンカズラ"] },
+  { kanji: "樅", yomi: ["もみ", "モミ"] },
+  { kanji: "椚", yomi: ["くぬぎ", "クヌギ"] },
+  { kanji: "山茶", yomi: ["つばき", "ツバキ"] },
+  { kanji: "蹌踉ける", yomi: ["よろける"] },
+  { kanji: "蹣跚ける", yomi: ["よろける"] },
+  { kanji: "跼る", yomi: ["せぐくまる", "せくぐまる"] },
+  { kanji: "髑髏", yomi: ["しゃれこうべ"] },
+  { kanji: "拇", yomi: ["おやゆび"] },
+  { kanji: "黄道眉", yomi: ["ほおじろ"] },
+  { kanji: "醴", yomi: ["あまざけ"] },
+  { kanji: "海松布", yomi: ["みるめ"] },
+  { kanji: "距", yomi: ["けづめ"] },
+  { kanji: "温ねる", yomi: ["たずねる"] },
+  { kanji: "幵ら", yomi: ["たいら"] },
+  { kanji: "梳る", yomi: ["くしけずる"] },
+  { kanji: "蝟", yomi: ["はりねずみ", "ハリネズミ"] },
+  { kanji: "穿山甲", yomi: ["せんざんこう", "センザンコウ"] },
+  { kanji: "恰も", yomi: ["あたかも"] },
+  { kanji: "斑猫", yomi: ["はんみょう", "ハンミョウ"] },
+  { kanji: "山楝蛇", yomi: ["やまかがし", "ヤマカガシ"] },
+  { kanji: "蜚蠊", yomi: ["ごきぶり"] },
+  { kanji: "馬陸", yomi: ["やすで", "ヤスデ"] },
+  { kanji: "哨", yomi: ["みはり"] },
+  { kanji: "僑", yomi: ["かりずまい"] },
+  { kanji: "町", yomi: ["あぜみち"] },
+  { kanji: "題", yomi: ["ひたい"] },
+  { kanji: "漁る", yomi: ["すなどる"] },
+  { kanji: "積える", yomi: ["たくわえる"] },
+  { kanji: "鉱", yomi: ["あらがね"] },
+  { kanji: "欄", yomi: ["てすり"] },
+  { kanji: "犠", yomi: ["いけにえ"] },
+  { kanji: "艦", yomi: ["いくさぶね"] },
+  { kanji: "璽", yomi: ["しるし"] },
+  { kanji: "蠶", yomi: ["かいこ"] },
+  { kanji: "霾る", yomi: ["つちふる"] },
+  { kanji: "貂熊", yomi: ["くずり"] },
+  { kanji: "鯖", yomi: ["よせなべ"] },
+  { kanji: "蠕動", yomi: ["ぜんどう"] },
+  { kanji: "沖醤蝦", yomi: ["おきあみ"] },
+  { kanji: "狗母魚", yomi: ["えそ"] },
+  { kanji: "参差", yomi: ["しんし"] },
+  { kanji: "觳觫", yomi: ["こくそく"] },
+  { kanji: "丿乀", yomi: ["へつほつ"] },
+  { kanji: "蛩", yomi: ["こおろぎ"] },
+  { kanji: "螻蛄", yomi: ["おけら"] },
+  { kanji: "蝦蛄", yomi: ["しゃこ"] },
+  { kanji: "幾許", yomi: ["いくばく"] },
+  { kanji: "玉響", yomi: ["たまゆら"] },
+  { kanji: "予予", yomi: ["かねがね"] },
+  { kanji: "曩しい", yomi: ["ひさしい"] },
+  { kanji: "洗膾", yomi: ["あらい"] },
+  { kanji: "醪", yomi: ["もろみ"] },
+  { kanji: "舫う", yomi: ["もやう"] },
+  { kanji: "唐箕", yomi: ["とうみ"] },
+  { kanji: "可坊", yomi: ["べらぼう"] },
+  { kanji: "鯔背", yomi: ["いなせ"] },
+  { kanji: "巫", yomi: ["かんなぎ"] },
+  { kanji: "沈菜", yomi: ["きむち"] },
+  { kanji: "青花", yomi: ["さば"] },
+  { kanji: "衾", yomi: ["ふすま"] },
+  { kanji: "鰒", yomi: ["あわび"] },
+  { kanji: "海柘榴", yomi: ["つばき", "ツバキ"] },
+  { kanji: "佞武多", yomi: ["ねぷた", "ねぶた"] },
+  { kanji: "車前草", yomi: ["おおばこ"] },
+  { kanji: "雛罌粟", yomi: ["ひなげし"] },
+  { kanji: "蕺草", yomi: ["どくだみ"] },
+  { kanji: "酢漿草", yomi: ["かたばみ", "カタバミ"] },
+  { kanji: "石蕗", yomi: ["つわぶき"] },
+  { kanji: "繁縷", yomi: ["はこべら"] },
+  { kanji: "搾菜", yomi: ["ざーさい", "ザーサイ"] },
+  { kanji: "瓊脂", yomi: ["ところてん"] },
+  { kanji: "皁莢", yomi: ["さいかち", "サイカチ"] },
+  { kanji: "杜松", yomi: ["ねず", "ネズ"] },
+  { kanji: "秦皮", yomi: ["とねりこ", "トネリコ"] },
+  { kanji: "朴木", yomi: ["ほおのき"] },
+  { kanji: "落霜紅", yomi: ["うめもどき"] },
+  { kanji: "駭く", yomi: ["おどろく"] },
+  { kanji: "行火", yomi: ["あんか"] },
+  { kanji: "焙烙", yomi: ["ほうろく"] },
+  { kanji: "蘭", yomi: ["ふじばかま"] },
+  { kanji: "溟", yomi: ["おおうなばら"] },
+  { kanji: "欹てる", yomi: ["そばだてる"] },
+  { kanji: "水蚤", yomi: ["みじんこ"] },
+  { kanji: "寝い", yomi: ["みにくい"] },
+  { kanji: "鶩", yomi: ["あひる"] },
+  { kanji: "金雀枝", yomi: ["えにしだ"] },
+  { kanji: "孅い", yomi: ["かよわい"] },
+  { kanji: "白膠木", yomi: ["ぬるで"] },
+  { kanji: "霎", yomi: ["こさめ"] },
+  { kanji: "鴨跖草", yomi: ["つゆくさ"] },
+  { kanji: "略々", yomi: ["ほぼほぼ"] },
+  { kanji: "猹", yomi: ["ちゃー"] },
+  { kanji: "朝餉", yomi: ["あさげ"] },
+  { kanji: "櫪", yomi: ["かいばおけ"] },
+  { kanji: "本染分倍良", yomi: ["ほんそめわけべら"] },
+  { kanji: "偽黒筋銀宝", yomi: ["にせくろすじぎんぽ"] },
+  { kanji: "魚狗", yomi: ["かわせみ"] },
+  { kanji: "魚虎", yomi: ["かわせみ", "はりせんぼん"] },
+  { kanji: "山魚狗", yomi: ["やませみ"] },
+  { kanji: "条虫", yomi: ["さなだむし"] },
+  { kanji: "鳥黐", yomi: ["とりもち"] },
+  { kanji: "鯢", yomi: ["さんしょううお"] },
+  { kanji: "硴", yomi: ["かき"] },
+  { kanji: "𩹉", yomi: ["とびうお"] },
+  { kanji: "緯", yomi: ["よこいと"] },
+  { kanji: "経", yomi: ["たていと"] }],
+
+  5:[{ kanji: "梣", yomi: ["とねりこ"] },
+  { kanji: "鵶", yomi: ["からす"] },
+  { kanji: "砌", yomi: ["みぎり"] },
+  { kanji: "緕", yomi: ["かすり"] },
+  { kanji: "籡", yomi: ["しんし"] },
+  { kanji: "叺", yomi: ["かます"] },
+  { kanji: "簓", yomi: ["ささら"] },
+  { kanji: "鈨", yomi: ["はばき"] },
+  { kanji: "善知鳥", yomi: ["うとう"] },
+　{ kanji: "鰘", yomi: ["むろあじ", "ムロアジ"] },
+  { kanji: "天魚", yomi: ["あまご"] },
+  { kanji: "鮐", yomi: ["ふぐ"] },
+  { kanji: "餺飥", yomi: ["ほうとう"] },
+  { kanji: "茼蒿", yomi: ["しゅんぎく"] },
+  { kanji: "飄石", yomi: ["ずんばい"] },
+  { kanji: "罎", yomi: ["さけがめ"] },
+  { kanji: "笳", yomi: ["あしぶえ"] },
+  { kanji: "踠く", yomi: ["もがく"] },
+  { kanji: "錵", yomi: ["にえ"] },
+  { kanji: "訌め", yomi: ["うちわもめ"] },
+  { kanji: "落籍す", yomi: ["ひかす"] },
+  { kanji: "随に", yomi: ["まにまに"] },
+  { kanji: "潦", yomi: ["にわたずみ"] },
+  { kanji: "袤り", yomi: ["ひろがり"] },
+  { kanji: "面皮", yomi: ["ちらがー"] },
+  { kanji: "氦", yomi: ["へりうむ", "ヘリウム"] },
+  { kanji: "蠼螋", yomi: ["はさみむし"] },
+  { kanji: "縉む", yomi: ["さしはさむ"] },
+  { kanji: "耘る", yomi: ["くさぎる"] },
+  { kanji: "僵屍", yomi: ["きょんしー", "キョンシー"] },
+  { kanji: "耳皮", yomi: ["みみがー"] },
+  { kanji: "子", yomi: ["おとこ"] },
+  { kanji: "牛膝", yomi: ["いのこづち"] },
+  { kanji: "身柱元", yomi: ["ちりけもと"] },
+  { kanji: "鴛鴦菊", yomi: ["とりかぶと", "トリカブト"] },
+  { kanji: "擠れる", yomi: ["おとしいれる"] },
+  { kanji: "𪛕", yomi: ["しょうのふえ"] },
+  { kanji: "木五倍子", yomi: ["きぶし", "キブシ"] },
+  { kanji: "山桜桃", yomi: ["ゆすらうめ", "ユスラウメ"] },
+  { kanji: "説道", yomi: ["いうならく"] },
+  { kanji: "拘う", yomi: ["かかずらう"] },
+  { kanji: "八道行成", yomi: ["やさすがり", "やさすかり"] },
+  { kanji: "可愛少男", yomi: ["えとおとこ"] },
+  { kanji: "可愛少女", yomi: ["えおとめ"] },
+  { kanji: "犛牛", yomi: ["やく"] },
+  { kanji: "犰狳", yomi: ["あるまじろ", "アルマジロ"] },
+  { kanji: "磯蚯蚓", yomi: ["いそめ", "イソメ"] },
+  { kanji: "蠑蚖", yomi: ["いもり"] },
+  { kanji: "凸む", yomi: ["つばくむ"] },
+  { kanji: "𠷏", yomi: ["そそろ"] },
+  { kanji: "顔", yomi: ["かんばせ"] },
+  { kanji: "粉", yomi: ["でしめーとる"] },
+  { kanji: "優", yomi: ["わざおぎ"] },
+  { kanji: "欄", yomi: ["おばしま"] },
+  { kanji: "韓", yomi: ["いげた"] },
+  { kanji: "鱁鮧", yomi: ["うるか"] },
+  { kanji: "野幇間", yomi: ["のだいこ"] },
+  { kanji: "魹", yomi: ["とど"] },
+  { kanji: "吝い", yomi: ["しわい"] },
+  { kanji: "矰繳", yomi: ["いぐるみ"] },
+  { kanji: "馿", yomi: ["うさぎうま"] },
+  { kanji: "㜀", yomi: ["やもめ"] },
+  { kanji: "寄坐", yomi: ["よりまし"] },
+  { kanji: "浜木綿", yomi: ["はまゆう", "ハマユウ"] },
+  { kanji: "沢瀉", yomi: ["おもだか", "オモダカ"] },
+  { kanji: "莔麻", yomi: ["いちび"] },
+  { kanji: "粔籹", yomi: ["おこし"] },
+  { kanji: "柞", yomi: ["ははそ"] },
+  { kanji: "桵木", yomi: ["たらのき"] },
+  { kanji: "豇豆", yomi: ["ささげ"] },
+  { kanji: "花楸樹", yomi: ["ななかまど"] },
+  { kanji: "肉荳蔲", yomi: ["にくずく"] },
+  { kanji: "榲桲", yomi: ["まるめろ"] },
+  { kanji: "兰", yomi: ["あららぎ"] },
+  { kanji: "兰", yomi: ["ふじばかま"] },
+  { kanji: "胡孫眼", yomi: ["さるのこしかけ"] },
+  { kanji: "皁", yomi: ["どんぐり"] },
+  { kanji: "丄", yomi: ["ほとり"] },
+  { kanji: "卩", yomi: ["わりふ"] },
+  { kanji: "鴯鶓", yomi: ["えみゅー", "エミュー"] },
+  { kanji: "畤", yomi: ["まつりのにわ"] },
+  { kanji: "硒", yomi: ["せれん", "セレン"] },
+  { kanji: "釔", yomi: ["いっとりうむ", "イットリウム"] },
+  { kanji: "碲", yomi: ["てるる", "テルル"] },
+  { kanji: "氙", yomi: ["きせのん", "キセノン"] },
+  { kanji: "鑪", yomi: ["らざほーじうむ", "ラザホージウム"] },
+  { kanji: "鋰", yomi: ["りちうむ", "リチウム"] },
+  { kanji: "鈹", yomi: ["べりりうむ", "ベリリウム"] },
+  { kanji: "鎂", yomi: ["まぐねしうむ", "マグネシウム"] },
+  { kanji: "鰋", yomi: ["なまず"] },
+  { kanji: "鼷", yomi: ["はつかねずみ"] },
+  { kanji: "䱱魚", yomi: ["さんしょううお"] },
+  { kanji: "鱮", yomi: ["たなご"] },
+  { kanji: "獢獢", yomi: ["ちゃうちゃう"] },
+  { kanji: "藁稭", yomi: ["わらしべ"] },
+  { kanji: "蠨蛸", yomi: ["あしだかぐも", "アシダカグモ"] },
+  { kanji: "梘水", yomi: ["かんすい"] },
+  { kanji: "魴鮄", yomi: ["ほうぼう"] },
+  { kanji: "鱘", yomi: ["ちょうざめ"] },
+  { kanji: "鱵", yomi: ["さより", "サヨリ"] },
+  { kanji: "金楚糕", yomi: ["ちんすこう"] },
+  { kanji: "圕", yomi: ["としょかん"] },
+  { kanji: "蛼", yomi: ["こおろぎ"] }]
+};
+
+// マスごとの難易度
+const cellLevels = {
+  0:1, 1:2, 2:2, 3:4, 4:3, 5:5,
+  6:2, 7:2, 8:3, 9:3, 10:4, 11:3,
+  12:2, 13:3, 14:4, 15:4, 16:3, 17:3,
+  18:3, 19:3, 20:4, 21:4, 22:3, 23:2,
+  24:3, 25:4, 26:3, 27:3, 28:2, 29:2,
+  30:5, 31:3, 32:3, 33:2, 34:2, 35:1
+};
+
+let board = document.getElementById("board");
+let answer = document.getElementById("answer");
+let submit = document.getElementById("submit");
+let turn = document.getElementById("turn");
+let scoreDisplay = document.getElementById("score");
+let problemDisplay = document.getElementById("problem");
+let startGameBtn = document.getElementById("startGame");
+let resetGameBtn = document.getElementById("resetGame");
+let cpuLevelSelect = document.getElementById("cpuLevel");
+let timerDisplay = document.getElementById("timer");
+
+let currentCell = null;
+let playerTurn = true;
+let cells = [];
+let cpuLevel = 2;
+let timerId = null;
+let timeLeft = 20;
+
+// 正解率表（CPUレベルごとに設定）
+const cpuRates = {
+  1: {1:0.95,2:0.8,3:0.6,4:0.3,5:0.1},
+  2: {1:0.99,2:0.9,3:0.8,4:0.5,5:0.2},
+  3: {1:1,2:0.95,3:0.9,4:0.75,5:0.6},
+  4: {1:1,2:0.99,3:0.95,4:0.90,5:0.75},
+  5: {1:1,2:1,3:1,4:0.99,5:0.95}
+};
+
+// 初期化関数
+function shuffle(array){for(let i=array.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[array[i],array[j]]=[array[j],array[i]];}return array;}
+function pickKanjiForLevel(level, used){
+  const candidates = kanjiDataByLevel[level].filter(k=>!used.includes(k.kanji));
+  if(candidates.length===0) return {kanji:"漢", yomi:["かん"]};
+  return candidates[Math.floor(Math.random()*candidates.length)];
+}
+
+// ゲーム開始
+startGameBtn.addEventListener("click",()=>{
+  cpuLevel = parseInt(cpuLevelSelect.value);
+  cpuLevelSelect.disabled=true;
+  startGameBtn.disabled=true;
+  initBoard();
+  turn.textContent = "プレイヤーのターン";
+  updateSelectableCells(true);
+  startTimer();
+});
+
+// リセットボタン
+resetGameBtn.addEventListener("click",()=>{ location.reload(); });
+
+// ボード初期化
+function initBoard(){
+  board.innerHTML="";
+  cells=[];
+  const usedKanji=[];
+  for(let i=0;i<36;i++){
+    let cell = document.createElement("div");
+    cell.classList.add("cell");
+    const level = cellLevels[i];
+    const problem = pickKanjiForLevel(level, usedKanji);
+    usedKanji.push(problem.kanji);
+
+    const kanjiSpan = document.createElement("div");
+    kanjiSpan.textContent = problem.kanji;
+    cell.appendChild(kanjiSpan);
+
+    const readingSpan = document.createElement("div");
+    readingSpan.classList.add("reading");
+    readingSpan.textContent = "○".repeat(problem.yomi[0].length);
+    cell.appendChild(readingSpan);
+
+    cell.dataset.kanji = problem.kanji;
+    cell.dataset.yomi = JSON.stringify(problem.yomi);
+    cell.dataset.index = i;
+    cell.dataset.attempts = 0;
+    cell.addEventListener("click", ()=>handleCellClick(cell));
+    board.appendChild(cell);
+    cells.push(cell);
+  }
+  currentCell = cells[0];
+  updateProblemDisplay(currentCell);
+}
+
+// 選択可能マス
+function markSelectable(indexes){cells.forEach(c=>c.classList.remove("selectable")); indexes.forEach(i=>cells[i].classList.add("selectable"));}
+function getSelectableIndexesAround(index){
+  const result=[]; const row=Math.floor(index/6), col=index%6;
+  [[-1,0],[1,0],[0,-1],[0,1]].forEach(d=>{const r=row+d[0],c=col+d[1]; if(r>=0&&r<6&&c>=0&&c<6) result.push(r*6+c);});
+  return result;
+}
+function updateSelectableCells(isInitial=false){
+  if(isInitial){ markSelectable([0]); currentCell=cells[0]; updateProblemDisplay(currentCell);}
+  else{ markSelectable(playerTurn?getSelectableIndexesAroundPlayer():getSelectableIndexesAroundCPU());}
+}
+
+// プレイヤー操作
+function handleCellClick(cell){
+  if(!playerTurn || !cell.classList.contains("selectable")) return;
+  currentCell=cell;
+  updateProblemDisplay(cell);
+}
+function updateProblemDisplay(cell){problemDisplay.textContent=`この漢字の読みは？ → ${cell.dataset.kanji}`;}
+
+// 回答送信
+submit.addEventListener("click",()=>{ playerSubmitAnswer(); });
+
+function playerSubmitAnswer(){
+  if(!currentCell || !playerTurn) return;
+  stopTimer();
+  const correct = JSON.parse(currentCell.dataset.yomi)[0];
+  if(answer.value===correct){
+    currentCell.classList.add("player");
+    currentCell.querySelector(".reading").textContent = correct;
+    turn.textContent="正解！CPUのターン";
+  } else {
+    let attempts=parseInt(currentCell.dataset.attempts)+1;
+    currentCell.dataset.attempts=attempts;
+    currentCell.querySelector(".reading").textContent=correct.slice(0,attempts)+"○".repeat(correct.length-attempts);
+    turn.textContent="不正解…CPUのターン";
+  }
+  playerTurn=false;
+  updateSelectableCells();
+  updateScore();
+  answer.value="";
+  setTimeout(cpuTurn,1500);
+}
+
+// CPUターン
+function cpuTurn(){
+  const selectable = getSelectableIndexesAroundCPU();
+  if(selectable.length===0){ checkGameEnd(); return; }
+  const choiceIndex = cpuChooseCell(selectable);
+  if(choiceIndex===undefined){ checkGameEnd(); return; }
+  const cell = cells[choiceIndex];
+  const correct = JSON.parse(cell.dataset.yomi)[0];
+  const readingSpan = cell.querySelector(".reading");
+  const level = cellLevels[choiceIndex];
+  const rate = cpuRates[cpuLevel][level];
+  const isCorrect = Math.random()<rate;
+
+  if(isCorrect){ cell.classList.add("cpu"); readingSpan.textContent=correct; turn.textContent="CPUが正解"; }
+  else{ let attempts=parseInt(cell.dataset.attempts)+1; cell.dataset.attempts=attempts; readingSpan.textContent=correct.slice(0,attempts)+"○".repeat(correct.length-attempts); turn.textContent="CPUが間違えました"; }
+  
+  setTimeout(()=>{ playerTurn=true; updateSelectableCells(); updateScore(); checkGameEnd();
+    const nextSelectable=cells.find(c=>c.classList.contains("selectable"));
+    if(nextSelectable) updateProblemDisplay(nextSelectable);
+    if(cells.some(c=>c.classList.contains("selectable"))) { turn.textContent="プレイヤーのターン"; startTimer(); }
+  },1500);
+}
+
+// CPU選択アルゴリズム
+function cpuChooseCell(selectable){
+  if(cpuLevel===1) return selectable[Math.floor(Math.random()*selectable.length)];
+  if(cpuLevel===2 && selectable.includes(28)) return 28;
+  if(cpuLevel>=3){
+    for(let pc of [28,21]){ if(selectable.includes(pc)) return pc; }
+    const attackable=selectable.filter(i=>getSelectableIndexesAround(i).some(n=>cells[n].classList.contains("player")));
+    if(attackable.length>0) return attackable[Math.floor(Math.random()*attackable.length)];
+    if(cells[8].classList.contains("player") && selectable.includes(22)) return 22;
+    if(cells[13].classList.contains("player") && selectable.includes(27)) return 27;
+  }
+  let priority1=[],priority2=[];
+  selectable.forEach(i=>{
+    const neighbors=getSelectableIndexesAround(i);
+    const cpuNeighbors=neighbors.filter(n=>cells[n].classList.contains("cpu")).length;
+    const playerNeighbors=neighbors.filter(n=>cells[n].classList.contains("player")).length;
+    if(cpuNeighbors>=2 && playerNeighbors===0) priority2.push(i);
+    else priority1.push(i);
+  });
+  if(priority1.length>0) return priority1[Math.floor(Math.random()*priority1.length)];
+  return priority2[Math.floor(Math.random()*priority2.length)];
+}
+
+// スコア更新
+function updateScore(){ let p=0,c=0; cells.forEach(cel=>{ if(cel.classList.contains("player")) p++; if(cel.classList.contains("cpu")) c++; }); scoreDisplay.textContent=`プレイヤー: ${p}  CPU: ${c}`; }
+
+// プレイヤーが選べるマス（修正あり）
+function getSelectableIndexesAroundPlayer(){
+  let result=[]; cells.forEach((c,i)=>{ if(c.classList.contains("player")) result.push(...getSelectableIndexesAround(i));});
+  result = result.filter(i=>!cells[i].classList.contains("player") && !cells[i].classList.contains("cpu"));
+  if(result.length===0){
+    [30,5].forEach(i=>{if(!cells[i].classList.contains("player") && !cells[i].classList.contains("cpu")) result.push(i);});
+    if(result.length===0){
+      const remain=cells.map((c,i)=>!c.classList.contains("player") && !c.classList.contains("cpu")?i:null).filter(i=>i!==null);
+      if(remain.length>0) result.push(remain[Math.floor(Math.random()*remain.length)]);
+    }
+  }
+  return result;
+}
+
+// CPUが選べるマス（修正あり）
+function getSelectableIndexesAroundCPU(){
+  let result=[]; cells.forEach((c,i)=>{ if(c.classList.contains("cpu")) result.push(...getSelectableIndexesAround(i));});
+  if(cells[35] && !cells[35].classList.contains("player") && !cells[35].classList.contains("cpu")) result.push(35);
+  result = result.filter(i=>!cells[i].classList.contains("cpu") && !cells[i].classList.contains("player"));
+  if(result.length===0){
+    [30,5].forEach(i=>{if(!cells[i].classList.contains("player") && !cells[i].classList.contains("cpu")) result.push(i);});
+    if(result.length===0){
+      const remain=cells.map((c,i)=>!c.classList.contains("player") && !c.classList.contains("cpu")?i:null).filter(i=>i!==null);
+      if(remain.length>0) result.push(remain[Math.floor(Math.random()*remain.length)]);
+    }
+  }
+  return result;
+}
+
+// ゲーム終了判定
+function checkGameEnd(){
+  const allTaken = cells.every(c=>c.classList.contains("player")||c.classList.contains("cpu"));
+  if(allTaken){
+    stopTimer();
+    const pScore=cells.filter(c=>c.classList.contains("player")).length;
+    const cScore=cells.filter(c=>c.classList.contains("cpu")).length;
+    if(pScore>cScore) turn.textContent="ゲーム終了！あなたの勝ち！";
+    else if(pScore<cScore) turn.textContent="ゲーム終了！あなたの負け！";
+    else turn.textContent="ゲーム終了！引き分け！";
+    return;
+  }
+}
+
+// タイマー機能
+function startTimer(){
+  stopTimer();
+  timeLeft = 20;
+  timerDisplay.textContent = `残り時間: ${timeLeft}秒`;
+  timerId = setInterval(()=>{
+    timeLeft--;
+    timerDisplay.textContent = `残り時間: ${timeLeft}秒`;
+    if(timeLeft<=0){
+      stopTimer();
+      turn.textContent = "時間切れ！CPUのターン";
+      playerTurn=false;
+      updateSelectableCells();
+      updateScore();
+      setTimeout(cpuTurn,1500);
+    }
+  },1000);
+}
+function stopTimer(){
+  if(timerId){ clearInterval(timerId); timerId=null; }
+  timerDisplay.textContent="";
+}
+</script>
+</body>
+</html>
